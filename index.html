@@ -1,0 +1,1257 @@
+<!DOCTYPE html>
+<html lang="vi" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Travel Planner v10.3 Pro - Dynamic Places & Map Fix</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SortableJS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    
+    <!-- File Parsers -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+    
+    <style>
+        #map { height: 360px; width: 100%; z-index: 1; }
+        @media (min-width: 768px) { #map { height: 100%; min-height: 520px; } }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        
+        .autocomplete-wrapper { position: relative; width: 100%; }
+        .autocomplete-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 9999 !important;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+        }
+        .suggestion-item { padding: 8px 12px; cursor: pointer; font-size: 12px; }
+        .drag-ghost { opacity: 0.4; background-color: #c7d2fe !important; border: 2px dashed #4f46e5 !important; }
+        .drag-chosen { background-color: #e0e7ff !important; }
+        
+        .drag-disabled .drag-handle { display: none; }
+        .drag-enabled .drag-handle { display: inline-block; cursor: grab; }
+        .drag-enabled .drag-item { border-style: dashed !important; border-color: #6366f1 !important; }
+    </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans min-h-screen flex flex-col transition-colors duration-300">
+
+    <!-- Header -->
+    <header class="bg-indigo-600 dark:bg-slate-800 text-white shadow-md transition-colors">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fa-solid fa-map-location-dot text-2xl text-yellow-300"></i>
+                <h1 class="text-lg font-bold tracking-wide">Smart Travel Planner v10.3 Pro</h1>
+            </div>
+            
+            <button id="themeToggleBtn" onclick="toggleAppTheme()" class="px-3 py-1.5 rounded-lg bg-indigo-700 dark:bg-slate-700 hover:bg-indigo-800 dark:hover:bg-slate-600 text-xs font-semibold flex items-center gap-1.5 transition">
+                <i id="themeIcon" class="fa-solid fa-moon text-amber-300"></i>
+                <span id="themeText">Chế độ Tối</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-2 sm:p-4 grid grid-cols-1 md:grid-cols-12 gap-4">
+        
+        <!-- Left Panel -->
+        <div class="md:col-span-5 lg:col-span-5 flex flex-col gap-4">
+            
+            <!-- Banner Khôi Phục Dữ Liệu -->
+            <div id="restoreBanner" class="hidden bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 p-3 rounded-xl shadow-sm space-y-2">
+                <div class="text-xs font-bold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                    <i class="fa-solid fa-clock-rotate-left text-amber-600"></i> Phát hiện lịch trình cũ!
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="restoreSavedSession()" class="flex-1 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-semibold transition">
+                        <i class="fa-solid fa-rotate-left mr-1"></i> Tiếp tục
+                    </button>
+                    <button onclick="clearSavedSession()" class="flex-1 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded text-xs font-semibold transition">
+                        <i class="fa-solid fa-trash-can mr-1"></i> Tạo mới
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 transition-colors">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-sm font-bold text-slate-700 dark:text-slate-200 flex items-center">
+                        <i class="fa-solid fa-location-dot text-indigo-500 mr-2"></i> Lên lịch trình
+                    </h2>
+                    <div class="flex gap-1">
+                        <button onclick="getCurrentGPS()" class="text-xs text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-slate-700 font-medium bg-emerald-50 dark:bg-slate-700/50 px-2 py-1 rounded flex items-center gap-1 border border-emerald-200 dark:border-emerald-800">
+                            <i class="fa-solid fa-crosshairs text-emerald-600"></i> GPS Thực
+                        </button>
+                        <button onclick="loadDemoSeoul()" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium bg-indigo-50 dark:bg-slate-700/50 px-2 py-1 rounded">
+                            Mẫu Seoul
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mb-3 bg-indigo-50 dark:bg-slate-700/50 p-2.5 rounded-lg border border-indigo-100 dark:border-slate-600 flex justify-between items-center">
+                    <label class="text-xs font-semibold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                        <i class="fa-solid fa-clock text-indigo-600 dark:text-indigo-400"></i> Giờ bắt đầu mỗi ngày:
+                    </label>
+                    <input type="time" id="customStartTime" value="08:00" onchange="onStartTimeChange()"
+                        class="px-2 py-1 bg-white dark:bg-slate-800 border border-indigo-300 dark:border-slate-500 rounded text-xs font-bold text-indigo-700 dark:text-indigo-300 focus:outline-none">
+                </div>
+
+                <!-- Điểm xuất phát -->
+                <div class="mb-3">
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400">Điểm bắt đầu (Khách sạn / Địa chỉ):</label>
+                        <button id="btnUseMyLoc" onclick="useGPSAsStart()" class="hidden text-[10px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline">
+                            + Dùng vị trí GPS
+                        </button>
+                    </div>
+                    <div class="autocomplete-wrapper">
+                        <i class="fa-solid fa-house text-green-500 absolute left-3 top-3 text-xs z-10"></i>
+                        <input type="text" id="startLocation" placeholder="Gõ từ khóa (VD: Lotte Hotel Seoul / 롯데호텔)..." 
+                            oninput="onSearchInput(this, true); saveCurrentSession();" autocomplete="off"
+                            class="w-full pl-8 pr-3 py-2 text-sm bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-lg focus:outline-none focus:border-indigo-500">
+                        <div id="startLocation_suggestions" class="autocomplete-suggestions bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 hidden"></div>
+                    </div>
+                    <div id="detectedCountryBadge" class="mt-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">Quốc gia định vị: Hàn Quốc (South Korea)</div>
+                </div>
+
+                <!-- Danh sách điểm đến & Tải File -->
+                <div class="mb-3">
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400">Danh sách điểm đến:</label>
+                        
+                        <label class="cursor-pointer text-[11px] bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 font-semibold px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800 transition flex items-center gap-1">
+                            <i class="fa-solid fa-file-import text-amber-600 dark:text-amber-400"></i> Nhập từ File
+                            <input type="file" id="fileImportInput" accept=".xlsx,.xls,.csv,.docx,.pdf,.txt" onchange="importLocationsFromFile(event)" class="hidden">
+                        </label>
+                    </div>
+
+                    <div id="fileImportStatus" class="hidden text-[10px] text-indigo-600 dark:text-indigo-400 mb-1 font-medium italic"></div>
+
+                    <div id="destinationsContainer" class="space-y-2 max-h-52 overflow-y-auto pr-1"></div>
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                    <button onclick="addDestinationInput()" class="flex-1 py-2 px-3 border border-indigo-200 dark:border-slate-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-slate-700 hover:bg-indigo-100 dark:hover:bg-slate-600 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-plus"></i> Thêm điểm
+                    </button>
+                    <button id="btnCreateRoute" onclick="optimizeSmartTimeRoute()" class="flex-[1.5] py-2 px-3 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 text-white rounded-lg text-xs font-semibold shadow transition flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Phân Lịch Tự Động
+                    </button>
+                </div>
+            </div>
+
+            <!-- Panel Kết quả & Xuất File -->
+            <div id="routeSummaryCard" class="hidden bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 space-y-3 transition-colors">
+                <div class="flex justify-between items-center border-b dark:border-slate-700 pb-2">
+                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-200 flex items-center">
+                        <i class="fa-solid fa-circle-check text-green-500 mr-2"></i>Kết quả phân lịch
+                    </h3>
+                    <span id="daysBadge" class="bg-indigo-100 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 text-xs px-2 py-0.5 rounded-full font-bold">1 Ngày</span>
+                </div>
+
+                <div class="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg border border-slate-200 dark:border-slate-600 space-y-2">
+                    <div class="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center">
+                        <i class="fa-solid fa-file-export text-indigo-600 dark:text-indigo-400 mr-1.5"></i> Xuất file lịch trình
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                            <label class="block text-[10px] text-slate-500 dark:text-slate-400 font-semibold mb-1">Định dạng File:</label>
+                            <select id="exportFileType" class="w-full p-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-slate-800 dark:text-slate-200 focus:outline-none">
+                                <option value="doc">File Word (.doc)</option>
+                                <option value="pdf">In / Lưu PDF (.pdf)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-slate-500 dark:text-slate-400 font-semibold mb-1">Dạng hiển thị:</label>
+                            <select id="exportLayoutType" class="w-full p-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-slate-800 dark:text-slate-200 focus:outline-none">
+                                <option value="table">Dạng Bảng (Table)</option>
+                                <option value="list">Dạng Danh sách (List)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button onclick="handleExport()" class="w-full py-1.5 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 text-white font-semibold rounded text-xs transition flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-download"></i> Xuất Lịch Trình Ngay
+                    </button>
+                </div>
+
+                <button id="btnToggleDetails" onclick="toggleDetailsView()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs shadow transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-list"></i> <span id="btnToggleDetailsText">Xem Lịch Trình Chi Tiết</span>
+                </button>
+            </div>
+
+            <!-- Lịch trình chi tiết -->
+            <div id="itineraryDetails" class="hidden space-y-4 max-h-[500px] overflow-y-auto pr-1 pb-4"></div>
+        </div>
+
+        <!-- Panel Phải: Bản đồ -->
+        <div class="md:col-span-7 lg:col-span-7 flex flex-col h-[400px] md:h-auto">
+            <div class="bg-white dark:bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 h-full flex flex-col transition-colors">
+                <div class="flex justify-between items-center px-2 py-1 mb-1 text-xs text-slate-500 dark:text-slate-400">
+                    <span id="mapStatusText"><i class="fa-solid fa-map-pin text-green-600 mr-1"></i> Bản đồ tương tác</span>
+                    <span id="gpsAccuracyText" class="text-[10px] text-slate-400 dark:text-slate-500"></span>
+                </div>
+                <div id="map" class="rounded-lg flex-1"></div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let map, mapMarkers = [], polylineLayers = [], scheduledDaysData = [];
+        let userGPSPos = null, gpsMarker = null, searchDebounceTimer = null;
+        let currentCountry = "South Korea", isDetailsVisible = false;
+        let sortableInstances = [];
+        let isDragEnabled = false;
+
+        const STORAGE_KEY = 'SMART_TRAVEL_SESSION_V10_3';
+
+        // TỪ ĐIỂN MỞ RỘNG (Tiếng Việt, Anh, Hàn)
+        const MULTI_LANG_MAP = {
+            "thủy cung coex": { en: "COEX Aquarium", kr: "코엑스 아쿠아리움", query: "COEX Aquarium Seoul", hours: "10:00 - 20:00", days: "Tất cả các ngày", ticket: "32,000 KRW", note: "Thủy cung quy mô lớn tại COEX Mall", stayMins: 120, timePref: 'day' },
+            "coex aquarium": { en: "COEX Aquarium", kr: "코엑스 아쿠아리움", query: "COEX Aquarium Seoul", hours: "10:00 - 20:00", days: "Tất cả các ngày", ticket: "32,000 KRW", note: "Thủy cung quy mô lớn tại COEX Mall", stayMins: 120, timePref: 'day' },
+            "코엑스 아쿠아리움": { en: "COEX Aquarium", kr: "코엑스 아쿠아리움", query: "COEX Aquarium Seoul", hours: "10:00 - 20:00", days: "Tất cả các ngày", ticket: "32,000 KRW", note: "Thủy cung quy mô lớn tại COEX Mall", stayMins: 120, timePref: 'day' },
+            
+            "myeongdong": { en: "Myeongdong Night Market", kr: "명동거리", query: "Myeongdong Street Seoul", hours: "10:00 - 23:00", days: "Tất cả các ngày", ticket: "Vào cửa tự do", note: "Khuyên đi ban đêm (sau 17:00 khi chợ đêm ẩm thực lên đèn)", stayMins: 120, timePref: 'night' },
+            "chợ myeongdong": { en: "Myeongdong Night Market", kr: "명동거리", query: "Myeongdong Street Seoul", hours: "10:00 - 23:00", days: "Tất cả các ngày", ticket: "Vào cửa tự do", note: "Phù hợp nhất để đi dạo & ăn uống đồ đường phố vào buổi tối", stayMins: 120, timePref: 'night' },
+            "명동거리": { en: "Myeongdong Night Market", kr: "명동거리", query: "Myeongdong Street Seoul", hours: "10:00 - 23:00", days: "Tất cả các ngày", ticket: "Vào cửa tự do", note: "Phù hợp nhất để đi dạo & ăn uống đồ đường phố vào buổi tối", stayMins: 120, timePref: 'night' },
+            
+            "cung điện gyeongbokgung": { en: "Gyeongbokgung Palace", kr: "경복궁", query: "Gyeongbokgung Palace Seoul", hours: "09:00 - 18:00", days: "Thứ 4 - Thứ 2 (Nghỉ Thứ 3)", ticket: "3,000 KRW", note: "Nên đi ban ngày, mặc Hanbok được miễn phí vé tham quan", stayMins: 120, timePref: 'day' },
+            "gyeongbokgung": { en: "Gyeongbokgung Palace", kr: "경복궁", query: "Gyeongbokgung Palace Seoul", hours: "09:00 - 18:00", days: "Thứ 4 - Thứ 2 (Nghỉ Thứ 3)", ticket: "3,000 KRW", note: "Nên đi ban ngày, mặc Hanbok được miễn phí vé tham quan", stayMins: 120, timePref: 'day' },
+            "경복궁": { en: "Gyeongbokgung Palace", kr: "경복궁", query: "Gyeongbokgung Palace Seoul", hours: "09:00 - 18:00", days: "Thứ 4 - Thứ 2 (Nghỉ Thứ 3)", ticket: "3,000 KRW", note: "Nên đi ban ngày, mặc Hanbok được miễn phí vé tham quan", stayMins: 120, timePref: 'day' },
+
+            "tháp namsan": { en: "N Seoul Tower", kr: "남산서울타워", query: "Namsan Seoul Tower", hours: "10:00 - 23:00", days: "Tất cả các ngày", ticket: "Đài quan sát: 21,000 KRW", note: "Đặc biệt đẹp vào hoàng hôn & ban đêm ngắm toàn cảnh Seoul", stayMins: 120, timePref: 'night' },
+            "남산서울타워": { en: "N Seoul Tower", kr: "남산서울타워", query: "Namsan Seoul Tower", hours: "10:00 - 23:00", days: "Tất cả các ngày", ticket: "Đài quan sát: 21,000 KRW", note: "Đặc biệt đẹp vào hoàng hôn & ban đêm ngắm toàn cảnh Seoul", stayMins: 120, timePref: 'night' },
+
+            "lotte hotel seoul": { en: "Lotte Hotel Seoul", kr: "롯데호텔 서울", query: "Lotte Hotel Seoul", hours: "Mở cửa 24/7", days: "Tất cả các ngày", ticket: "Khách sạn", note: "Điểm lưu trú / Khởi hành", stayMins: 0, timePref: 'any' },
+            "롯데호텔 서울": { en: "Lotte Hotel Seoul", kr: "롯데호텔 서울", query: "Lotte Hotel Seoul", hours: "Mở cửa 24/7", days: "Tất cả các ngày", ticket: "Khách sạn", note: "Điểm lưu trú / Khởi hành", stayMins: 0, timePref: 'any' },
+
+            "đảo nami": { en: "Nami Island", kr: "남이섬", query: "Nami Island Chuncheon", hours: "08:00 - 21:00", days: "Tất cả các ngày", ticket: "16,000 KRW (gồm phà)", note: "Dành nguyên buổi (tối thiểu 4 tiếng) để đi phà & dạo chơi", stayMins: 240, timePref: 'day' },
+            "남이섬": { en: "Nami Island", kr: "남이섬", query: "Nami Island Chuncheon", hours: "08:00 - 21:00", days: "Tất cả các ngày", ticket: "16,000 KRW (gồm phà)", note: "Dành nguyên buổi (tối thiểu 4 tiếng) để đi phà & dạo chơi", stayMins: 240, timePref: 'day' },
+
+            "lotte world": { en: "Lotte World", kr: "롯데월드", query: "Lotte World Seoul", hours: "10:00 - 22:00", days: "Tất cả các ngày", ticket: "62,000 KRW", note: "Công viên giải trí rộng lớn", stayMins: 240, timePref: 'day' },
+            "everland": { en: "Everland", kr: "에버랜드", query: "Everland Yongin", hours: "10:00 - 22:00", days: "Tất cả các ngày", ticket: "68,000 KRW", note: "Công viên chủ đề quy mô lớn", stayMins: 240, timePref: 'day' }
+        };
+
+        // DANH SÁCH QUÁN ĂN/CAFÉ ĐIỂM CAO THEO VÙNG (TỰ ĐỘNG CHỌN THEO VỊ TRÍ)
+        const NEARBY_PLACES_DATABASE = [
+            {
+                region: "myeongdong",
+                lat: 37.563, lng: 126.985,
+                restaurants: [
+                    { name: "Myeongdong Kyoja Main", krName: "명동교자 본점", rating: "4.5★ Naver/Google", desc: "Mì Kalguksu & Bánh xếp Mandu nổi tiếng đạt Michelin Bib Gourmand, không cần đặt trước", type: "Ăn chính" },
+                    { name: "Wangbijib Myeongdong", krName: "왕비집 명동본점", rating: "4.6★ Naver", desc: "Thịt nướng Hàn Quốc BBQ chất lượng cao, phục vụ nhanh", type: "BBQ" }
+                ],
+                cafes: [
+                    { name: "Luft Coffee Myeongdong", krName: "루프트 커피", rating: "4.4★ Naver", desc: "Phong cách Hawaii tối giản, cà phê rang xay cực ngon & bánh mì ngọt", type: "Café" },
+                    { name: "Stylenanda Pink Pool Cafe", krName: "스타일난다 핑크풀카페", rating: "4.3★ Google", desc: "Quán café concept bể bơi màu hồng check-in cực hot", type: "Café Sống Ảo" }
+                ]
+            },
+            {
+                region: "gyeongbokgung",
+                lat: 37.579, lng: 126.977,
+                restaurants: [
+                    { name: "Tosokchon Samgyetang", krName: "토속촌 삼계탕", rating: "4.5★ Naver/Google", desc: "Gà hầm sâm nổi tiếng nhất Seoul gần Cung Điện, đông nhưng quay vòng bàn rất nhanh", type: "Ăn chính" },
+                    { name: "Hwangsaengga Kalguksu", krName: "황생가 칼국수", rating: "4.4★ Michelin", desc: "Mì nước dùng xương bò thanh ngọt & mandu truyền thống", type: "Ăn chính" }
+                ],
+                cafes: [
+                    { name: "Onion Anguk", krName: "어니언 안국", rating: "4.6★ Naver", desc: "Quán café trong nhà Hanok cổ kính cực đẹp, bánh ngọt đa dạng", type: "Café Hanok" },
+                    { name: "Green Mile Coffee Bukchon", krName: "그린마일커피", rating: "4.5★ Google", desc: "Tầng thượng ngắm trọn vẹn mái nhà cổ làng Bukchon Hanok", type: "Café View Cổ" }
+                ]
+            },
+            {
+                region: "namsan",
+                lat: 37.551, lng: 126.988,
+                restaurants: [
+                    { name: "101 Namsan Tonkatsu", krName: "101번지 남산돈까스", rating: "4.3★ Naver", desc: "Thịt heo chiên xù Tonkatsu kiểu Hàn khổng lồ ngay chân núi Namsan", type: "Ăn chính" }
+                ],
+                cafes: [
+                    { name: "The Royal Food & Drink", krName: "더 로열 푸드 앤 드링크", rating: "4.6★ Google", desc: "Quán café rooftop view ngắm toàn cảnh Seoul từ ngọn đồi Haebangchon", type: "Café View Đẹp" }
+                ]
+            },
+            {
+                region: "coex",
+                lat: 37.511, lng: 127.059,
+                restaurants: [
+                    { name: "Hadongkwan COEX", krName: "하동관 코엑스몰점", rating: "4.3★ Naver", desc: "Canh gomtang xương bò truyền thống lâu đời", type: "Ăn chính" }
+                ],
+                cafes: [
+                    { name: "Stem Coffee COEX", krName: "스템커피", rating: "4.5★ Naver", desc: "Café không gian xanh thoáng mát nằm ngay dưới lòng COEX", type: "Café" }
+                ]
+            }
+        ];
+
+        function isKoreanText(text) {
+            return /[\uac00-\ud7af]|[\u1100-\u11ff]|[\u3130-\u318f]|[\ua960-\ua97f]|[\ud7b0-\ud7ff]/.test(text);
+        }
+
+        function getPlaceMeta(placeName) {
+            if (!placeName) return { hours: "09:00 - 18:00", days: "Tất cả các ngày", ticket: "Tự túc", note: "Tham quan tự do", stayMins: 90, timePref: 'any' };
+            const lower = placeName.toLowerCase();
+            
+            for (let key in MULTI_LANG_MAP) {
+                if (lower.includes(key) || key.includes(lower)) return MULTI_LANG_MAP[key];
+            }
+
+            if (lower.includes("chợ") || lower.includes("night market") || lower.includes("myeongdong") || lower.includes("hongdae")) {
+                return { hours: "17:00 - 23:00", days: "Tất cả các ngày", ticket: "Vào cửa tự do", note: "Nên đi vào ban đêm / buổi tối", stayMins: 120, timePref: 'night' };
+            }
+            if (lower.includes("đảo") || lower.includes("island") || lower.includes("everland") || lower.includes("world") || lower.includes("park")) {
+                return { hours: "08:30 - 21:00", days: "Tất cả các ngày", ticket: "Vé cổng/Dịch vụ", note: "Địa điểm lớn, cần đi ban ngày (ít nhất 4 tiếng)", stayMins: 240, timePref: 'day' };
+            }
+            if (lower.includes("cung") || lower.includes("palace") || lower.includes("museum") || lower.includes("bảo tàng") || lower.includes("làng")) {
+                return { hours: "09:00 - 17:00", days: "Thứ 4 - Thứ 2", ticket: "Vé tham quan", note: "Bắt buộc đi ban ngày", stayMins: 120, timePref: 'day' };
+            }
+
+            return { hours: "09:00 - 18:00", days: "Tất cả các ngày", ticket: "Tự túc", note: "Tham quan tự do", stayMins: 90, timePref: 'any' };
+        }
+
+        function parseOpeningTime(hoursStr) {
+            if (!hoursStr || !hoursStr.includes(':')) return 8 * 60;
+            try {
+                let openStr = hoursStr.split('-')[0].trim();
+                let parts = openStr.split(':');
+                return (parseInt(parts[0], 10) * 60) + parseInt(parts[1], 10);
+            } catch(e) {
+                return 8 * 60;
+            }
+        }
+
+        function buildSearchQuery(inputStr) {
+            let lower = inputStr.toLowerCase().trim();
+            for (let key in MULTI_LANG_MAP) {
+                if (lower === key || lower.includes(key)) {
+                    return MULTI_LANG_MAP[key].query || MULTI_LANG_MAP[key].en;
+                }
+            }
+            return inputStr;
+        }
+
+        // TỰ ĐỘNG CHUYỂN ĐỔI TÊN TIẾNG ANH / TIẾNG HÀN ĐỂ MỞ NAVER MAP
+        function getNaverSearchTerm(name) {
+            if (!name) return "";
+            let lower = name.toLowerCase().trim();
+            for (let key in MULTI_LANG_MAP) {
+                if (lower.includes(key) || key.includes(lower)) {
+                    return MULTI_LANG_MAP[key].kr || MULTI_LANG_MAP[key].en;
+                }
+            }
+            return name;
+        }
+
+        function openNaverMap(lat, lng, name) { 
+            let searchTerm = getNaverSearchTerm(name);
+            window.open(`https://map.naver.com/v5/search/${encodeURIComponent(searchTerm)}`, '_blank'); 
+        }
+
+        function openGoogleMap(lat, lng, name) { 
+            window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank'); 
+        }
+
+        function checkSavedSession() {
+            const savedData = localStorage.getItem(STORAGE_KEY);
+            if (savedData) {
+                try {
+                    const parsed = JSON.parse(savedData);
+                    if (parsed.start || (parsed.dests && parsed.dests.length > 0)) {
+                        document.getElementById('restoreBanner').classList.remove('hidden');
+                    }
+                } catch(e) {}
+            }
+        }
+
+        function saveCurrentSession() {
+            const startName = document.getElementById('startLocation').value.trim();
+            const startTime = document.getElementById('customStartTime').value;
+            const destInputs = Array.from(document.querySelectorAll('.dest-input')).map(input => input.value.trim()).filter(val => val !== '');
+
+            const sessionObj = {
+                start: startName,
+                time: startTime,
+                country: currentCountry,
+                dests: destInputs,
+                scheduledData: scheduledDaysData
+            };
+
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionObj));
+        }
+
+        function restoreSavedSession() {
+            const savedData = localStorage.getItem(STORAGE_KEY);
+            if (!savedData) return;
+
+            try {
+                const parsed = JSON.parse(savedData);
+                document.getElementById('startLocation').value = parsed.start || '';
+                document.getElementById('customStartTime').value = parsed.time || '08:00';
+                currentCountry = parsed.country || 'South Korea';
+                document.getElementById('detectedCountryBadge').innerText = `Quốc gia định vị: ${currentCountry}`;
+
+                const container = document.getElementById('destinationsContainer');
+                container.innerHTML = '';
+
+                if (parsed.dests && parsed.dests.length > 0) {
+                    parsed.dests.forEach(d => addDestinationInput(d));
+                } else {
+                    addDestinationInput();
+                    addDestinationInput();
+                }
+
+                if (parsed.scheduledData && parsed.scheduledData.length > 0) {
+                    scheduledDaysData = parsed.scheduledData;
+                    recalculateScheduleTimes();
+                    renderMap(scheduledDaysData);
+                    document.getElementById('daysBadge').innerText = `${scheduledDaysData.length} Ngày`;
+                    document.getElementById('routeSummaryCard').classList.remove('hidden');
+                }
+
+                document.getElementById('restoreBanner').classList.add('hidden');
+            } catch (e) {
+                console.error("Lỗi khôi phục session:", e);
+            }
+        }
+
+        function clearSavedSession() {
+            localStorage.removeItem(STORAGE_KEY);
+            document.getElementById('startLocation').value = '';
+            document.getElementById('customStartTime').value = '08:00';
+            document.getElementById('destinationsContainer').innerHTML = '';
+            document.getElementById('routeSummaryCard').classList.add('hidden');
+            document.getElementById('itineraryDetails').classList.add('hidden');
+            scheduledDaysData = [];
+            mapMarkers.forEach(m => map.removeLayer(m));
+            polylineLayers.forEach(l => map.removeLayer(l));
+            mapMarkers = [];
+            polylineLayers = [];
+            
+            addDestinationInput();
+            addDestinationInput();
+            document.getElementById('restoreBanner').classList.add('hidden');
+        }
+
+        function toggleAppTheme() {
+            const htmlEl = document.documentElement;
+            const icon = document.getElementById('themeIcon');
+            const text = document.getElementById('themeText');
+
+            if (htmlEl.classList.contains('dark')) {
+                htmlEl.classList.remove('dark');
+                htmlEl.classList.add('light');
+                icon.className = "fa-solid fa-moon text-amber-300";
+                text.innerText = "Chế độ Tối";
+            } else {
+                htmlEl.classList.remove('light');
+                htmlEl.classList.add('dark');
+                icon.className = "fa-solid fa-sun text-amber-400";
+                text.innerText = "Chế độ Sáng";
+            }
+        }
+
+        function cleanLocationLine(str) {
+            if (!str) return '';
+            let cleaned = str.trim();
+            cleaned = cleaned.replace(/^[\d\.\-\*\•\)]+/, '').trim();
+            return cleaned;
+        }
+
+        async function importLocationsFromFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const statusEl = document.getElementById('fileImportStatus');
+            statusEl.innerText = `Đang đọc file ${file.name}...`;
+            statusEl.classList.remove('hidden');
+
+            const fileName = file.name;
+            const fileExt = fileName.split('.').pop().toLowerCase();
+            let locationsFound = [];
+
+            try {
+                if (['xlsx', 'xls', 'csv'].includes(fileExt)) {
+                    const data = await file.arrayBuffer();
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                    jsonData.forEach(row => {
+                        if (Array.isArray(row)) {
+                            row.forEach(cell => {
+                                if (cell !== null && cell !== undefined) {
+                                    let c = cleanLocationLine(String(cell));
+                                    if (c && c.length > 1 && !c.toLowerCase().includes('địa điểm') && !c.toLowerCase().includes('location')) {
+                                        locationsFound.push(c);
+                                    }
+                                }
+                            });
+                        }
+                    });
+
+                } else if (fileExt === 'docx') {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+                    const cleanText = result.value
+                        .replace(/<\/p>/gi, '\n')
+                        .replace(/<\/li>/gi, '\n')
+                        .replace(/<br\s*\/?>/gi, '\n')
+                        .replace(/<[^>]+>/g, '');
+
+                    cleanText.split('\n').forEach(line => {
+                        let c = cleanLocationLine(line);
+                        if (c && c.length > 1) locationsFound.push(c);
+                    });
+
+                } else if (fileExt === 'pdf') {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const textContent = await page.getTextContent();
+                        let lastY = null, pageLines = [], currentLine = '';
+
+                        textContent.items.forEach(item => {
+                            const currentY = item.transform[5];
+                            if (lastY !== null && Math.abs(currentY - lastY) > 5) {
+                                if (currentLine.trim().length > 0) pageLines.push(currentLine.trim());
+                                currentLine = item.str;
+                            } else {
+                                currentLine += item.str;
+                            }
+                            lastY = currentY;
+                        });
+                        if (currentLine.trim().length > 0) pageLines.push(currentLine.trim());
+
+                        pageLines.forEach(line => {
+                            let c = cleanLocationLine(line);
+                            if (c && c.length > 1) locationsFound.push(c);
+                        });
+                    }
+
+                } else if (fileExt === 'txt') {
+                    const text = await file.text();
+                    text.split(/\r?\n/).forEach(line => {
+                        let c = cleanLocationLine(line);
+                        if (c && c.length > 1) locationsFound.push(c);
+                    });
+                }
+
+                locationsFound = [...new Set(locationsFound)];
+
+                if (locationsFound.length > 0) {
+                    const container = document.getElementById('destinationsContainer');
+                    container.innerHTML = '';
+                    
+                    const slicedLocations = locationsFound.slice(0, 30);
+                    slicedLocations.forEach(loc => addDestinationInput(loc));
+
+                    statusEl.innerText = `✅ Đã thêm ${slicedLocations.length} địa điểm từ file ${file.name}`;
+                    saveCurrentSession();
+                } else {
+                    statusEl.innerText = `⚠️ Không trích xuất được địa điểm nào từ file!`;
+                }
+
+            } catch (err) {
+                console.error("Lỗi đọc file:", err);
+                statusEl.innerText = `❌ Lỗi khi đọc file. Vui lòng kiểm tra lại file!`;
+            }
+
+            event.target.value = '';
+        }
+
+        function initMap() {
+            map = L.map('map').setView([37.5665, 126.9780], 12);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+                maxZoom: 19, 
+                attribution: '© OpenStreetMap' 
+            }).addTo(map);
+        }
+
+        // TỰ ĐỘNG HIỂN THỊ TÊN TIẾNG ANH BÊN CẠNH TIẾNG HÀN KHI TÌM KIẾM
+        function onSearchInput(inputEl, isStartLocation = false) {
+            clearTimeout(searchDebounceTimer);
+            let rawQuery = inputEl.value.trim();
+            const suggBox = document.getElementById(inputEl.id + "_suggestions");
+
+            if (!rawQuery || rawQuery.length < 1) {
+                suggBox.classList.add('hidden');
+                return;
+            }
+
+            searchDebounceTimer = setTimeout(async () => {
+                let searchQuery = buildSearchQuery(rawQuery);
+
+                try {
+                    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(searchQuery)}&limit=6&bbox=124.0,33.0,132.0,38.9&lat=37.5665&lon=126.9780`);
+                    const data = await res.json();
+                    
+                    suggBox.innerHTML = '';
+                    let count = 0;
+
+                    if (data.features && data.features.length > 0) {
+                        data.features.forEach(f => {
+                            let name = f.properties.name || '';
+                            const city = f.properties.city || f.properties.state || 'Seoul';
+                            
+                            let englishTranslation = "";
+                            let meta = getPlaceMeta(name);
+                            if (meta && meta.en) englishTranslation = meta.en;
+
+                            // Nếu nhập Tiếng Hàn, thêm tên Tiếng Anh bên cạnh
+                            let displayName = name;
+                            if (isKoreanText(name) && englishTranslation) {
+                                displayName = `${name} (${englishTranslation})`;
+                            } else if (!isKoreanText(name) && meta && meta.kr) {
+                                displayName = `${name} (${meta.kr})`;
+                            }
+
+                            count++;
+                            const item = document.createElement('div');
+                            item.className = 'suggestion-item hover:bg-indigo-50 dark:hover:bg-slate-600 dark:text-slate-100';
+                            item.innerHTML = `<i class="fa-solid fa-location-dot text-indigo-500 mr-1.5"></i><b>${displayName}</b> <span class="text-slate-400 text-[11px]">${city}</span>`;
+                            
+                            item.onclick = () => {
+                                inputEl.value = name;
+                                suggBox.classList.add('hidden');
+                                saveCurrentSession();
+                            };
+                            suggBox.appendChild(item);
+                        });
+                    }
+
+                    if (count > 0) suggBox.classList.remove('hidden');
+                    else suggBox.classList.add('hidden');
+
+                } catch(e) {
+                    suggBox.classList.add('hidden');
+                }
+            }, 300);
+        }
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.autocomplete-wrapper')) {
+                document.querySelectorAll('.autocomplete-suggestions').forEach(el => el.classList.add('hidden'));
+            }
+        });
+
+        async function fetchCoordinates(placeInput) {
+            if (!placeInput || placeInput.trim() === '') return null;
+
+            if (placeInput.trim().toLowerCase() === "vị trí gps thực tế" && userGPSPos) {
+                return JSON.parse(JSON.stringify(userGPSPos));
+            }
+
+            let meta = getPlaceMeta(placeInput);
+            let searchQuery = buildSearchQuery(placeInput);
+
+            try {
+                let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(searchQuery)}&limit=1&bbox=124.0,33.0,132.0,38.9&lat=37.5665&lon=126.9780`;
+                let res = await fetch(url);
+                let data = await res.json();
+
+                if (data.features && data.features.length > 0) {
+                    const feat = data.features[0];
+                    const coords = feat.geometry.coordinates;
+
+                    return {
+                        id: 'place_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                        lat: coords[1],
+                        lng: coords[0],
+                        name: placeInput,
+                        ticket: meta.ticket || "Tự túc",
+                        hours: meta.hours || "09:00 - 18:00",
+                        openMins: parseOpeningTime(meta.hours),
+                        days: meta.days || "Tất cả các ngày",
+                        note: meta.note || "Tham quan tự do",
+                        stayMins: meta.stayMins || 90,
+                        timePref: meta.timePref || 'any'
+                    };
+                }
+            } catch (e) {
+                console.error("Lỗi API Photon:", e);
+            }
+
+            return null;
+        }
+
+        function getCurrentGPS() {
+            if (!navigator.geolocation) return alert("Trình duyệt không hỗ trợ GPS!");
+            document.getElementById('gpsAccuracyText').innerText = "Đang quét GPS...";
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const acc = Math.round(position.coords.accuracy);
+
+                    userGPSPos = { id: 'gps_start', lat, lng, name: "Vị trí GPS thực tế", hours: "24/7", days: "Tất cả các ngày", ticket: "N/A", note: "Vị trí hiện tại", stayMins: 0, timePref: 'any' };
+
+                    if (gpsMarker) map.removeLayer(gpsMarker);
+
+                    const redPin = L.divIcon({
+                        className: 'custom-gps-pin',
+                        html: `<div style="background:#ef4444;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 0 10px rgba(239,68,68,0.8);"><i class="fa-solid fa-location-crosshairs text-xs"></i></div>`
+                    });
+
+                    gpsMarker = L.marker([lat, lng], { icon: redPin }).addTo(map)
+                        .bindPopup(`<b>Vị trí GPS của bạn</b><br>Độ chính xác: ±${acc}m`).openPopup();
+
+                    map.setView([lat, lng], 15);
+                    document.getElementById('gpsAccuracyText').innerText = `GPS chính xác: ±${acc}m`;
+                    document.getElementById('btnUseMyLoc').classList.remove('hidden');
+                },
+                () => {
+                    alert("Không thể lấy vị trí GPS!");
+                    document.getElementById('gpsAccuracyText').innerText = "Lỗi lấy GPS";
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        }
+
+        function useGPSAsStart() {
+            if (userGPSPos) {
+                document.getElementById('startLocation').value = "Vị trí GPS thực tế";
+                saveCurrentSession();
+            }
+        }
+
+        function addDestinationInput(value = '') {
+            const container = document.getElementById('destinationsContainer');
+            const id = 'dest_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+            const div = document.createElement('div');
+            div.className = "destination-row mb-2";
+            div.innerHTML = `
+                <div class="autocomplete-wrapper flex items-center gap-2">
+                    <input type="text" id="${id}" value="${value}" placeholder="Nhập địa điểm (Tháp Namsan, 경복궁, COEX)..." 
+                        oninput="onSearchInput(this, false); saveCurrentSession();" autocomplete="off"
+                        class="dest-input flex-1 px-3 py-1.5 text-sm bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-lg focus:outline-none focus:border-indigo-500">
+                    <button onclick="this.closest('.destination-row').remove(); saveCurrentSession();" class="text-slate-400 hover:text-red-500 p-1">
+                        <i class="fa-solid fa-trash-can text-xs"></i>
+                    </button>
+                    <div id="${id}_suggestions" class="autocomplete-suggestions bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 hidden"></div>
+                </div>
+            `;
+            container.appendChild(div);
+        }
+
+        function loadDemoSeoul() {
+            document.getElementById('startLocation').value = "Khách sạn Lotte Seoul";
+            const container = document.getElementById('destinationsContainer');
+            container.innerHTML = '';
+            const demoPlaces = ["Thủy cung COEX", "Đảo Nami", "Cung điện Gyeongbokgung", "Tháp Namsan", "Chợ Myeongdong"];
+            demoPlaces.forEach(p => addDestinationInput(p));
+            saveCurrentSession();
+        }
+
+        function getDistanceKM(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function parseStartTimeToMinutes() {
+            const timeVal = document.getElementById('customStartTime').value || "08:00";
+            const parts = timeVal.split(':');
+            const h = parseInt(parts[0], 10) || 8;
+            const m = parseInt(parts[1], 10) || 0;
+            return (h * 60) + m;
+        }
+
+        function formatTimeFromMinutes(totalMinutes) {
+            let h = Math.floor(totalMinutes / 60) % 24;
+            let m = Math.round(totalMinutes % 60);
+            return `${h < 10 ? '0'+h : h}:${m < 10 ? '0'+m : m}`;
+        }
+
+        function onStartTimeChange() {
+            recalculateScheduleTimes();
+            if (isDetailsVisible) renderDetailsHTML();
+            renderMap(scheduledDaysData);
+            saveCurrentSession();
+        }
+
+        function recalculateScheduleTimes() {
+            if (!scheduledDaysData || scheduledDaysData.length === 0) return;
+            const startDayMinutes = parseStartTimeToMinutes();
+
+            scheduledDaysData.forEach(day => {
+                let currentPos = day.startPlace;
+                let currentMins = startDayMinutes;
+
+                day.places.forEach(p => {
+                    let dist = getDistanceKM(currentPos.lat, currentPos.lng, p.lat, p.lng);
+                    let travelMins = Math.round((dist / 25) * 60) + 10;
+                    let arrMins = currentMins + travelMins;
+                    
+                    let openMins = p.openMins || parseOpeningTime(p.hours);
+                    if (arrMins < openMins) arrMins = openMins;
+
+                    let depMins = arrMins + (p.stayMins || 90);
+
+                    p.dist = dist.toFixed(1);
+                    p.travelMins = travelMins;
+                    p.arrTimeStr = formatTimeFromMinutes(arrMins);
+                    p.depTimeStr = formatTimeFromMinutes(depMins);
+
+                    currentMins = depMins;
+                    currentPos = p;
+                });
+            });
+        }
+
+        async function optimizeSmartTimeRoute() {
+            const startName = document.getElementById('startLocation').value.trim();
+            const destInputs = Array.from(document.querySelectorAll('.dest-input'))
+                                    .map(input => input.value.trim())
+                                    .filter(val => val !== '');
+
+            if (!startName || destInputs.length === 0) return alert("Vui lòng nhập điểm bắt đầu và ít nhất 1 điểm đến!");
+
+            const btn = document.getElementById('btnCreateRoute');
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang định vị...`;
+            btn.disabled = true;
+
+            let baseStartPlace = await fetchCoordinates(startName);
+            if (!baseStartPlace) {
+                btn.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Phân Lịch Tự Động`;
+                btn.disabled = false;
+                return alert(`Không tìm thấy điểm bắt đầu: "${startName}". Vui lòng kiểm tra lại.`);
+            }
+
+            let unvisited = [];
+            for (let dest of destInputs) {
+                let place = await fetchCoordinates(dest);
+                if (place) unvisited.push(place);
+            }
+
+            if (unvisited.length === 0) {
+                btn.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Phân Lịch Tự Động`;
+                btn.disabled = false;
+                return alert("Không định vị được địa điểm nào trong danh sách!");
+            }
+
+            const startDayMinutes = parseStartTimeToMinutes();
+            const NIGHT_START_MINUTES = 17 * 60;
+            const MAX_DAY_END_MINUTES = 22 * 60 + 30;
+
+            scheduledDaysData = [];
+            let currentDayNum = 1;
+
+            while (unvisited.length > 0) {
+                let currentDayPlaces = [];
+                let currentPos = JSON.parse(JSON.stringify(baseStartPlace));
+                let absoluteCurrentMins = startDayMinutes;
+
+                while (unvisited.length > 0) {
+                    let isNightTimeNow = absoluteCurrentMins >= NIGHT_START_MINUTES;
+
+                    let candidates = unvisited.filter(p => {
+                        if (!isNightTimeNow && p.timePref === 'night') return false;
+                        return true;
+                    });
+
+                    if (candidates.length === 0) {
+                        let remainingNightOnly = unvisited.filter(p => p.timePref === 'night');
+                        if (remainingNightOnly.length > 0 && !isNightTimeNow) {
+                            absoluteCurrentMins = NIGHT_START_MINUTES;
+                            candidates = remainingNightOnly;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let nearestIdxInCandidates = 0;
+                    let minDist = getDistanceKM(currentPos.lat, currentPos.lng, candidates[0].lat, candidates[0].lng);
+
+                    for (let i = 1; i < candidates.length; i++) {
+                        let d = getDistanceKM(currentPos.lat, currentPos.lng, candidates[i].lat, candidates[i].lng);
+                        if (d < minDist) {
+                            minDist = d;
+                            nearestIdxInCandidates = i;
+                        }
+                    }
+
+                    let selectedPlace = candidates[nearestIdxInCandidates];
+                    let travelMins = Math.round((minDist / 25) * 60) + 10;
+                    let arrivalMins = absoluteCurrentMins + travelMins;
+
+                    let openMins = selectedPlace.openMins || parseOpeningTime(selectedPlace.hours);
+                    if (arrivalMins < openMins) arrivalMins = openMins;
+
+                    let departureMins = arrivalMins + selectedPlace.stayMins;
+
+                    if (departureMins > MAX_DAY_END_MINUTES) break;
+
+                    currentDayPlaces.push({
+                        ...selectedPlace,
+                        travelMins: travelMins,
+                        dist: minDist.toFixed(1),
+                        arrTimeStr: formatTimeFromMinutes(arrivalMins),
+                        depTimeStr: formatTimeFromMinutes(departureMins)
+                    });
+
+                    absoluteCurrentMins = departureMins;
+                    currentPos = selectedPlace;
+
+                    let realIdx = unvisited.findIndex(item => item.id === selectedPlace.id);
+                    if (realIdx !== -1) unvisited.splice(realIdx, 1);
+                }
+
+                if (currentDayPlaces.length > 0) {
+                    scheduledDaysData.push({
+                        day: currentDayNum++,
+                        startPlace: JSON.parse(JSON.stringify(baseStartPlace)),
+                        places: currentDayPlaces
+                    });
+                } else {
+                    if (unvisited.length > 0) {
+                        let p = unvisited.shift();
+                        let travelMins = 15;
+                        let arrivalMins = startDayMinutes + travelMins;
+                        let openMins = p.openMins || parseOpeningTime(p.hours);
+                        if (arrivalMins < openMins) arrivalMins = openMins;
+                        let departureMins = arrivalMins + p.stayMins;
+
+                        scheduledDaysData.push({
+                            day: currentDayNum++,
+                            startPlace: JSON.parse(JSON.stringify(baseStartPlace)),
+                            places: [{
+                                ...p,
+                                travelMins: travelMins,
+                                dist: "5.0",
+                                arrTimeStr: formatTimeFromMinutes(arrivalMins),
+                                depTimeStr: formatTimeFromMinutes(departureMins)
+                            }]
+                        });
+                    }
+                }
+            }
+
+            renderMap(scheduledDaysData);
+            document.getElementById('daysBadge').innerText = `${scheduledDaysData.length} Ngày`;
+            document.getElementById('routeSummaryCard').classList.remove('hidden');
+            
+            isDetailsVisible = true;
+            renderDetailsHTML();
+            document.getElementById('itineraryDetails').classList.remove('hidden');
+            document.getElementById('btnToggleDetailsText').innerText = "Thu Nhỏ Lịch Trình Chi Tiết";
+
+            btn.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Phân Lịch Tự Động`;
+            btn.disabled = false;
+
+            saveCurrentSession();
+        }
+
+        function renderMap(days) {
+            mapMarkers.forEach(m => map.removeLayer(m)); polylineLayers.forEach(l => map.removeLayer(l));
+            mapMarkers = []; polylineLayers = [];
+            const colors = ['#4f46e5', '#e11d48', '#059669', '#d97706', '#8b5cf6'];
+            let allCoords = [];
+
+            days.forEach((dayData, dIdx) => {
+                const color = colors[dIdx % colors.length];
+                const coords = [[dayData.startPlace.lat, dayData.startPlace.lng]];
+                allCoords.push(coords[0]);
+
+                const startIcon = L.divIcon({ 
+                    className: 'custom-pin', 
+                    html: `<div style="background:#16a34a;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.3);"><i class="fa-solid fa-house"></i></div>` 
+                });
+                mapMarkers.push(L.marker(coords[0], {icon: startIcon}).addTo(map).bindPopup(`<b>[Ngày ${dayData.day}] Khởi hành: ${dayData.startPlace.name}</b>`));
+                
+                dayData.places.forEach((p, pIdx) => {
+                    coords.push([p.lat, p.lng]); 
+                    allCoords.push([p.lat, p.lng]);
+                    const icon = L.divIcon({ 
+                        className: 'custom-pin', 
+                        html: `<div style="background:${color};color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.3);">${dIdx+1}.${pIdx+1}</div>` 
+                    });
+                    
+                    const popupContent = `
+                        <b>[Ngày ${dayData.day}] ${p.name}</b><br>
+                        <b>Giờ ghé:</b> ${p.arrTimeStr} - ${p.depTimeStr} (${p.stayMins/60} tiếng)<br>
+                        <b>Ngày mở:</b> ${p.days || 'Tất cả các ngày'}<br>
+                        <b>Giờ mở cửa:</b> ${p.hours}<br>
+                        <b>Giá vé:</b> ${p.ticket}<br>
+                        <i style="color:#d97706;">💡 ${p.note || 'Tham quan tự do'}</i><br>
+                        <div style="margin-top:6px; display:flex; gap:4px;">
+                            <button onclick="openNaverMap(${p.lat}, ${p.lng}, '${p.name.replace(/'/g, "\\'")}')" style="background:#03C75A; color:#fff; border:none; padding:3px 6px; border-radius:4px; font-size:10px; cursor:pointer;">Mở Naver Map</button>
+                            <button onclick="openGoogleMap(${p.lat}, ${p.lng}, '${p.name.replace(/'/g, "\\'")}')" style="background:#4285F4; color:#fff; border:none; padding:3px 6px; border-radius:4px; font-size:10px; cursor:pointer;">Mở Google Map</button>
+                        </div>
+                    `;
+
+                    mapMarkers.push(L.marker([p.lat, p.lng], {icon}).addTo(map).bindPopup(popupContent));
+                });
+
+                polylineLayers.push(L.polyline(coords, { color, weight: 4, opacity: 0.8, dashArray: '6, 6' }).addTo(map));
+            });
+
+            if (allCoords.length > 0) map.fitBounds(L.polyline(allCoords).getBounds(), { padding: [40, 40] });
+        }
+
+        // TỰ ĐỘNG TÌM QUÁN ĂN & CAFÉ ĐIỂM CAO GẦN TỪNG ĐỊA ĐIỂM
+        function toggleNearbyPlaces(placeId, lat, lng, placeName) {
+            const el = document.getElementById(`nearby_${placeId}`);
+            if (!el) return;
+
+            if (!el.classList.contains('hidden')) {
+                el.classList.add('hidden');
+                return;
+            }
+
+            let foundGroup = NEARBY_PLACES_DATABASE.find(item => {
+                let dist = getDistanceKM(lat, lng, item.lat, item.lng);
+                return dist <= 3.5;
+            });
+
+            let html = `<div class="mt-2 p-2 bg-amber-50/80 dark:bg-amber-950/40 rounded-lg border border-amber-200 dark:border-amber-800 space-y-2 text-[11px]">`;
+            html += `<div class="font-bold text-amber-800 dark:text-amber-300 flex items-center justify-between">
+                        <span><i class="fa-solid fa-utensils text-amber-600 mr-1"></i> Gợi ý Quán ăn & Café gần ${placeName} (Không cần đặt trước)</span>
+                    </div>`;
+
+            if (foundGroup) {
+                html += `<div class="space-y-1">`;
+                foundGroup.restaurants.concat(foundGroup.cafes).forEach(item => {
+                    html += `
+                        <div class="bg-white dark:bg-slate-800 p-1.5 rounded border border-amber-100 dark:border-slate-700 flex justify-between items-center">
+                            <div>
+                                <b class="text-slate-800 dark:text-slate-100">${item.name}</b> <span class="text-slate-400">(${item.krName})</span>
+                                <span class="ml-1 px-1 bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 rounded text-[9px] font-bold">${item.rating}</span>
+                                <div class="text-[10px] text-slate-500 dark:text-slate-400">${item.desc}</div>
+                            </div>
+                            <button onclick="openNaverMap(0,0,'${item.krName}')" class="px-2 py-0.5 bg-emerald-600 text-white text-[9px] font-bold rounded">Map</button>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            } else {
+                html += `
+                    <div class="text-slate-600 dark:text-slate-300 space-y-1">
+                        <div>Tìm nhanh các quán chấm điểm 4.5★+ gần đây trên Naver Map:</div>
+                        <div class="flex gap-1 pt-1">
+                            <button onclick="openNaverMap(${lat},${lng},'${getNaverSearchTerm(placeName)} 맛집')" class="flex-1 py-1 bg-emerald-600 text-white rounded text-[10px] font-bold"><i class="fa-solid fa-utensils mr-1"></i> Tìm Quán Ăn Ngon (맛집)</button>
+                            <button onclick="openNaverMap(${lat},${lng},'${getNaverSearchTerm(placeName)} 카페')" class="flex-1 py-1 bg-amber-600 text-white rounded text-[10px] font-bold"><i class="fa-solid fa-mug-saucer mr-1"></i> Tìm Quán Café (카페)</button>
+                        </div>
+                    </div>
+                `;
+            }
+            html += `</div>`;
+
+            el.innerHTML = html;
+            el.classList.remove('hidden');
+        }
+
+        function renderDetailsHTML() {
+            const container = document.getElementById('itineraryDetails');
+            container.innerHTML = '';
+            sortableInstances.forEach(inst => inst.destroy());
+            sortableInstances = [];
+
+            let topControlHtml = `
+                <div class="flex justify-between items-center bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <span class="text-xs font-bold text-slate-700 dark:text-slate-200">Thao tác lịch trình:</span>
+                    <button id="btnToggleDragMode" onclick="toggleDragMode()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold flex items-center gap-1 shadow-sm transition">
+                        <i class="fa-solid fa-up-down-left-right"></i> Bật Kéo Thả Trực Tiếp
+                    </button>
+                </div>
+            `;
+            container.innerHTML = topControlHtml;
+
+            scheduledDaysData.forEach((day, dIdx) => {
+                let html = `
+                <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3 mb-4 transition-colors">
+                    <div class="flex justify-between items-center border-b dark:border-slate-700 pb-2">
+                        <span class="font-bold text-indigo-700 dark:text-indigo-400 text-sm"><i class="fa-solid fa-calendar-day mr-2"></i> NGÀY ${day.day}</span>
+                    </div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400 italic"><i class="fa-solid fa-house text-green-500 mr-1"></i>Xuất phát: ${day.startPlace.name}</div>
+                    
+                    <div id="dragContainer_day_${dIdx}" data-day-index="${dIdx}" class="space-y-3 min-h-[50px] p-1 bg-slate-50/50 dark:bg-slate-900/30 rounded-lg border border-dashed border-slate-200 dark:border-slate-700">`;
+                
+                day.places.forEach((p, pIdx) => {
+                    const placeUniqueId = `p_${dIdx}_${pIdx}`;
+                    html += `
+                    <div data-id="${p.id || pIdx}" class="drag-item bg-white dark:bg-slate-700/80 p-2.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs shadow-sm space-y-1 hover:border-indigo-300 dark:hover:border-indigo-500 transition">
+                        <div class="flex justify-between items-start font-bold text-slate-800 dark:text-slate-100">
+                            <div class="flex items-center gap-1.5">
+                                <i class="drag-handle fa-solid fa-grip-vertical text-slate-400 hover:text-indigo-500 mr-1"></i>
+                                <span class="text-indigo-600 dark:text-indigo-300 bg-indigo-100 dark:bg-slate-600 px-1.5 rounded text-[11px]">${day.day}.${pIdx + 1}</span>
+                                <span>${p.name}</span>
+                            </div>
+                            <span class="text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800 text-[11px] font-mono">${p.arrTimeStr} - ${p.depTimeStr}</span>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-1 text-[11px] text-slate-600 dark:text-slate-300 pl-5">
+                            <div><i class="fa-solid fa-bus text-blue-500 mr-1"></i>Từ điểm trước: ~${p.travelMins}p (${p.dist}km)</div>
+                            <div><i class="fa-solid fa-clock text-indigo-500 mr-1"></i>Thời gian dừng: <b>${p.stayMins >= 60 ? (p.stayMins/60) + ' tiếng' : p.stayMins + ' phút'}</b></div>
+                        </div>
+
+                        <div class="pt-1 mt-1 border-t border-slate-100 dark:border-slate-600 grid grid-cols-1 gap-1 text-[11px] pl-5">
+                            <div class="text-slate-500 dark:text-slate-400"><i class="fa-regular fa-clock text-amber-600 mr-1"></i><b>Giờ mở:</b> ${p.hours || 'N/A'} | <b>Vé:</b> ${p.ticket || 'Tự túc'}</div>
+                            ${p.note ? `<div class="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 p-1.5 rounded border border-amber-200 dark:border-amber-800 mt-1"><i class="fa-regular fa-lightbulb text-amber-500 mr-1"></i><b>Lưu ý:</b> ${p.note}</div>` : ''}
+                        </div>
+
+                        <div class="pt-2 flex flex-wrap gap-1.5 pl-5">
+                            <button onclick="openNaverMap(${p.lat}, ${p.lng}, '${p.name.replace(/'/g, "\\'")}')" class="flex-1 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition">
+                                <i class="fa-solid fa-map-location-dot"></i> Naver Map
+                            </button>
+                            <button onclick="openGoogleMap(${p.lat}, ${p.lng}, '${p.name.replace(/'/g, "\\'")}')" class="flex-1 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition">
+                                <i class="fa-solid fa-globe"></i> Google Maps
+                            </button>
+                            <button onclick="toggleNearbyPlaces('${placeUniqueId}', ${p.lat}, ${p.lng}, '${p.name.replace(/'/g, "\\'")}')" class="w-full py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition mt-1">
+                                <i class="fa-solid fa-utensils"></i> Quán ăn & Café gần đây (Chấm điểm cao)
+                            </button>
+                        </div>
+
+                        <div id="nearby_${placeUniqueId}" class="hidden pl-5"></div>
+                    </div>`;
+                });
+                html += `</div></div>`;
+                container.innerHTML += html;
+            });
+
+            scheduledDaysData.forEach((day, dIdx) => {
+                const el = document.getElementById(`dragContainer_day_${dIdx}`);
+                if (el) {
+                    let sortable = new Sortable(el, {
+                        group: 'shared_itinerary',
+                        animation: 150,
+                        handle: '.drag-handle',
+                        disabled: !isDragEnabled,
+                        ghostClass: 'drag-ghost',
+                        chosenClass: 'drag-chosen',
+                        onEnd: function (evt) {
+                            const fromDayIdx = parseInt(evt.from.getAttribute('data-day-index'), 10);
+                            const toDayIdx = parseInt(evt.to.getAttribute('data-day-index'), 10);
+                            const oldIdx = evt.oldIndex;
+                            const newIdx = evt.newIndex;
+
+                            if (fromDayIdx === toDayIdx && oldIdx === newIdx) return;
+
+                            const movedItem = scheduledDaysData[fromDayIdx].places.splice(oldIdx, 1)[0];
+                            scheduledDaysData[toDayIdx].places.splice(newIdx, 0, movedItem);
+
+                            recalculateScheduleTimes();
+                            renderDetailsHTML();
+                            renderMap(scheduledDaysData);
+                            saveCurrentSession();
+                        }
+                    });
+                    sortableInstances.push(sortable);
+                }
+            });
+        }
+
+        function toggleDetailsView() {
+            const container = document.getElementById('itineraryDetails');
+            const btnText = document.getElementById('btnToggleDetailsText');
+
+            if (isDetailsVisible) {
+                container.classList.add('hidden');
+                btnText.innerText = "Xem Lịch Trình Chi Tiết";
+                isDetailsVisible = false;
+            } else {
+                renderDetailsHTML();
+                container.classList.remove('hidden');
+                btnText.innerText = "Thu Nhỏ Lịch Trình Chi Tiết";
+                isDetailsVisible = true;
+            }
+        }
+
+        function toggleDragMode() {
+            isDragEnabled = !isDragEnabled;
+            const container = document.getElementById('itineraryDetails');
+            const btnDrag = document.getElementById('btnToggleDragMode');
+
+            if (isDragEnabled) {
+                container.classList.remove('drag-disabled');
+                container.classList.add('drag-enabled');
+                btnDrag.className = "px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-semibold flex items-center gap-1 shadow-sm transition";
+                btnDrag.innerHTML = `<i class="fa-solid fa-lock"></i> Tắt Kéo Thả`;
+            } else {
+                container.classList.remove('drag-enabled');
+                container.classList.add('drag-disabled');
+                btnDrag.className = "px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold flex items-center gap-1 shadow-sm transition";
+                btnDrag.innerHTML = `<i class="fa-solid fa-up-down-left-right"></i> Bật Kéo Thả Trực Tiếp`;
+            }
+
+            sortableInstances.forEach(inst => {
+                inst.option('disabled', !isDragEnabled);
+            });
+        }
+
+        function handleExport() {
+            const fileType = document.getElementById('exportFileType').value;
+            const layoutType = document.getElementById('exportLayoutType').value;
+            if (scheduledDaysData.length === 0) return alert("Chưa có dữ liệu lịch trình để xuất!");
+            if (fileType === 'pdf') exportPDF(layoutType); else exportWordDoc(layoutType);
+        }
+
+        function exportWordDoc(layoutType) {
+            let bodyHtml = `<h1 style="color: #4f46e5; text-align: center;">LỊCH TRÌNH DU LỊCH TỐI ƯU</h1><hr style="border: 1px solid #4f46e5; margin-bottom: 20px;">`;
+            scheduledDaysData.forEach(day => {
+                bodyHtml += `<h2 style="color: #1e1b4b; background-color: #e0e7ff; padding: 8px;">NGÀY ${day.day} (Khởi hành: ${day.startPlace.name})</h2>`;
+                if (layoutType === 'table') {
+                    bodyHtml += `<table border="1" cellpadding="8" cellspacing="0" style="width: 100%; border-collapse: collapse; font-size: 13px;"><thead><tr style="background-color: #4f46e5; color: white;"><th>Thời gian</th><th>Điểm đến</th><th>Thời lượng</th><th>Ngày mở</th><th>Giờ mở</th><th>Giá vé</th><th>Lưu ý</th></tr></thead><tbody>`;
+                    day.places.forEach((p, idx) => {
+                        bodyHtml += `<tr><td><b>${p.arrTimeStr} - ${p.depTimeStr}</b></td><td><b>${day.day}.${idx + 1} ${p.name}</b></td><td>${p.stayMins/60} tiếng</td><td>${p.days || 'Tất cả'}</td><td>${p.hours || 'N/A'}</td><td>${p.ticket || 'N/A'}</td><td>${p.note || ''}</td></tr>`;
+                    });
+                    bodyHtml += `</tbody></table>`;
+                } else {
+                    day.places.forEach((p, idx) => {
+                        bodyHtml += `<div style="margin-bottom: 10px;"><b>${day.day}.${idx + 1} ${p.name}</b> [${p.arrTimeStr} - ${p.depTimeStr}] - Thời gian dừng: ${p.stayMins/60} tiếng | Ngày mở: ${p.days} | Mở cửa: ${p.hours} | Vé: ${p.ticket} <br><i>💡 Lưu ý: ${p.note || ''}</i></div>`;
+                    });
+                }
+            });
+            const blob = new Blob(['\ufeff', `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'><head><meta charset='utf-8'></head><body>${bodyHtml}</body></html>`], { type: 'application/msword' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = `Lich_Trinh_${layoutType}.doc`; a.click();
+        }
+
+        function exportPDF(layoutType) {
+            let printWindow = window.open('', '_blank');
+            let pdfHtml = `<html><head><title>In Lịch Trình</title><style>body{font-family:sans-serif;padding:20px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;}</style></head><body><h1>LỊCH TRÌNH DU LỊCH TỐI ƯU</h1>`;
+            scheduledDaysData.forEach(day => {
+                pdfHtml += `<h2>NGÀY ${day.day} (${day.startPlace.name})</h2>`;
+                if (layoutType === 'table') {
+                    pdfHtml += `<table><thead><tr><th>Thời gian</th><th>Điểm đến</th><th>Thời lượng</th><th>Ngày mở</th><th>Giờ mở</th><th>Giá vé</th><th>Lưu ý</th></tr></thead><tbody>`;
+                    day.places.forEach((p, idx) => { pdfHtml += `<tr><td>${p.arrTimeStr}-${p.depTimeStr}</td><td>${day.day}.${idx + 1} ${p.name}</td><td>${p.stayMins/60} tiếng</td><td>${p.days || 'Tất cả'}</td><td>${p.hours || 'N/A'}</td><td>${p.ticket || 'N/A'}</td><td>${p.note || ''}</td></tr>`; });
+                    pdfHtml += `</tbody></table>`;
+                } else {
+                    day.places.forEach((p, idx) => { pdfHtml += `<p><b>${day.day}.${idx + 1} ${p.name}</b> (${p.arrTimeStr}-${p.depTimeStr}) - Thời gian dừng: ${p.stayMins/60} tiếng | Ngày mở: ${p.days} | Giờ: ${p.hours} | Vé: ${p.ticket}<br><i>💡 Lưu ý: ${p.note || ''}</i></p>`; });
+                }
+            });
+            pdfHtml += `<script>window.onload=function(){window.print();}<\/script></body></html>`;
+            printWindow.document.write(pdfHtml); printWindow.document.close();
+        }
+
+        window.onload = function() { 
+            initMap(); 
+            checkSavedSession();
+            
+            if (!localStorage.getItem(STORAGE_KEY)) {
+                addDestinationInput(); 
+                addDestinationInput(); 
+            }
+        };
+    </script>
+</body>
+</html>
